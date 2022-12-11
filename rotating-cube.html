@@ -1,0 +1,181 @@
+<style>html, body, canvas { margin: 0px; padding: 0px; }</style>
+<canvas id="screen" style="width: 100%; height: 100%"/>
+<script>
+  // Rasterizer displaying rotating cube, port of One Lone Coder's C++ 3D engine tutorials's
+
+  // init canvas
+  const canvas = document.getElementById('screen');
+  const context = canvas.getContext('2d');
+  
+  // FPS
+  const FPS = 60;
+  const cycleDelay = Math.floor(1000 / FPS);
+  var oldCycleTime = 0;
+  var cycleCount = 0;
+  var fps_rate = '...';
+  
+  // resolution  
+  const WIDTH = window.innerWidth;
+  const HEIGHT = window.innerHeight;
+  
+  // rasterizer
+  var near = 0.1;
+  var far = 1000.0;
+  var fov = 90.0;
+  var aspectRatio = HEIGHT / WIDTH;
+  var fovRad = 1.0 / Math.tan(fov * 0.5 / 180.0 * 3.14159);
+  var viewAngle = 0.0;
+  
+  // projection
+  var matrixProjected = [
+    [aspectRatio * fovRad, 0, 0, 0],
+    [0, fovRad, 0, 0, 0],
+    [0, 0, far / (far - near), 1.0],
+    [0, 0, (-far * near) / (far - near), 0.0]
+  ];
+  
+  // mesh
+  var cube = [
+    // south
+    [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+    [[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [1.0, 0.0, 0.0]],
+    
+    // east
+    [[1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [1.0, 1.0, 1.0]],
+    [[1.0, 0.0, 0.0], [1.0, 1.0, 1.0], [1.0, 0.0, 1.0]],
+    
+    // north
+    [[1.0, 0.0, 1.0], [1.0, 1.0, 1.0], [0.0, 1.0, 1.0]],
+    [[1.0, 0.0, 1.0], [0.0, 1.0, 1.0], [0.0, 0.0, 1.0]],
+    
+    // west
+    [[0.0, 0.0, 1.0], [0.0, 1.0, 1.0], [0.0, 1.0, 0.0]],
+    [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]],
+    
+    // top
+    [[0.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
+    [[0.0, 1.0, 0.0], [1.0, 1.0, 1.0], [1.0, 1.0, 0.0]],
+    
+    // bottom
+    [[1.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]],
+    [[1.0, 0.0, 1.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+  ];
+  
+  // matrix multiplication
+  function multiplyMatrixVector(i, o, m) {
+    o[0] = i[0] * m[0][0] + i[1] * m[1][0] + i[2] * m[2][0] + m[3][0];
+    o[1] = i[0] * m[0][1] + i[1] * m[1][1] + i[2] * m[2][1] + m[3][1];
+    o[2] = i[0] * m[0][2] + i[1] * m[1][2] + i[2] * m[2][2] + m[3][2];
+    w = i[0] * m[0][3] + i[1] * m[1][3] + i[2] * m[2][3] + m[3][3];
+    if (w != 0.0) { o[0] /= w; o[1] /= w; o[2] /= w; }
+  }
+
+  // render triangle
+  function drawTriangle(x1, y1, x2, y2, x3, y3, color) {
+    context.strokeStyle = color;
+    context.beginPath();
+    context.moveTo(x1, y1);
+    context.lineTo(x2, y2);
+    context.lineTo(x3, y3);
+    context.lineTo(x1, y1);
+    context.stroke();
+  }
+
+  // game loop
+  function gameLoop() {
+    // calculate FPS
+    cycleCount++;
+    if (cycleCount >= 60) cycleCount = 0;
+    var startTime = Date.now();
+    var cycleTime = startTime - oldCycleTime;
+    oldCycleTime = startTime;
+    if (cycleCount % 60 == 0) fps_rate = Math.floor(1000 / cycleTime);
+    
+    // resize canvas
+    canvas.width = WIDTH;
+    canvas.height = HEIGHT;
+    
+    // update screen
+    context.fillStyle = 'Black';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    
+    
+    
+    // Set up rotation matrices
+		viewAngle += 0.01;
+
+		// Rotation Z
+		rotateZ = [
+		  [Math.cos(viewAngle), Math.sin(viewAngle), 0.0, 0.0],
+		  [-Math.sin(viewAngle), Math.cos(viewAngle), 0.0, 0.0],
+		  [0.0, 0.0, 1.0, 0.0],
+		  [0.0, 0.0, 0.0, 1.0],
+		];
+		
+		// Rotation X
+		rotateX = [
+		  [1.0, 0.0, 0.0, 0.0],
+		  [0.0, Math.cos(viewAngle), Math.sin(viewAngle), 0.0],
+		  [0.0, -Math.sin(viewAngle), Math.cos(viewAngle), 0.0],
+		  [0.0, 0.0, 0.0, 1.0],
+		];
+    
+    for (let i = 0; i < cube.length; i++) {
+      // define triangles
+      let triangleProjected = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]];
+      let triangleMesh = cube[i];
+      triangleRotatedZ = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]];
+      triangleRotatedZX = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]];
+            
+      // Rotate in Z-Axis
+			multiplyMatrixVector(triangleMesh[0], triangleRotatedZ[0], rotateZ);
+			multiplyMatrixVector(triangleMesh[1], triangleRotatedZ[1], rotateZ);
+			multiplyMatrixVector(triangleMesh[2], triangleRotatedZ[2], rotateZ);
+
+			// Rotate in X-Axis
+			multiplyMatrixVector(triangleRotatedZ[0], triangleRotatedZX[0], rotateX);
+			multiplyMatrixVector(triangleRotatedZ[1], triangleRotatedZX[1], rotateX);
+			multiplyMatrixVector(triangleRotatedZ[2], triangleRotatedZX[2], rotateX);
+      
+      // offset into the screen
+			triangleTranslated = JSON.parse(JSON.stringify(triangleRotatedZX));
+			triangleTranslated[0][2] = triangleRotatedZX[0][2] + 3.0;
+			triangleTranslated[1][2] = triangleRotatedZX[1][2] + 3.0;
+			triangleTranslated[2][2] = triangleRotatedZX[2][2] + 3.0;
+      
+      // project triangles from 3D --> 2D
+      multiplyMatrixVector(triangleTranslated[0], triangleProjected[0], matrixProjected);
+      multiplyMatrixVector(triangleTranslated[1], triangleProjected[1], matrixProjected);
+      multiplyMatrixVector(triangleTranslated[2], triangleProjected[2], matrixProjected);
+      
+      // scale into view
+			triangleProjected[0][0] += 1.0; triangleProjected[0][1] += 1.0;
+			triangleProjected[1][0] += 1.0; triangleProjected[1][1] += 1.0;
+			triangleProjected[2][0] += 1.0; triangleProjected[2][1] += 1.0;
+			triangleProjected[0][0] *= 0.5 * WIDTH;
+			triangleProjected[0][1] *= 0.5 * HEIGHT;
+			triangleProjected[1][0] *= 0.5 * WIDTH;
+			triangleProjected[1][1] *= 0.5 * HEIGHT;
+			triangleProjected[2][0] *= 0.5 * WIDTH;
+			triangleProjected[2][1] *= 0.5 * HEIGHT;
+
+			// rasterize triangle
+			drawTriangle(triangleProjected[0][0], triangleProjected[0][1],
+				triangleProjected[1][0], triangleProjected[1][1],
+				triangleProjected[2][0], triangleProjected[2][1],
+				'White');
+    }
+
+
+    
+    // infinite loop
+    setTimeout(gameLoop, cycleDelay);
+    
+    // render FPS to screen
+    context.fillStyle = 'white';
+    context.font = '10px Monospace';
+    context.fillText('FPS: ' + fps_rate, 0, 20);
+    
+  } window.onload = function() { gameLoop(); }
+  
+</script>
