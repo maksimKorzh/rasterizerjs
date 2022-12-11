@@ -99,8 +99,6 @@
     context.fillStyle = 'Black';
     context.fillRect(0, 0, canvas.width, canvas.height);
     
-    
-    
     // Set up rotation matrices
 		viewAngle += 0.01;
 
@@ -115,8 +113,8 @@
 		// Rotation X
 		rotateX = [
 		  [1.0, 0.0, 0.0, 0.0],
-		  [0.0, Math.cos(viewAngle), Math.sin(viewAngle), 0.0],
-		  [0.0, -Math.sin(viewAngle), Math.cos(viewAngle), 0.0],
+		  [0.0, Math.cos(viewAngle * 0.5), Math.sin(viewAngle * 0.5), 0.0],
+		  [0.0, -Math.sin(viewAngle * 0.5), Math.cos(viewAngle * 0.5), 0.0],
 		  [0.0, 0.0, 0.0, 1.0],
 		];
     
@@ -143,6 +141,8 @@
 			triangleTranslated[1][2] = triangleRotatedZX[1][2] + 3.0;
 			triangleTranslated[2][2] = triangleRotatedZX[2][2] + 3.0;
       
+      
+      
       // project triangles from 3D --> 2D
       multiplyMatrixVector(triangleTranslated[0], triangleProjected[0], matrixProjected);
       multiplyMatrixVector(triangleTranslated[1], triangleProjected[1], matrixProjected);
@@ -165,8 +165,6 @@
 				triangleProjected[2][0], triangleProjected[2][1],
 				'White');
     }
-
-
     
     // infinite loop
     setTimeout(gameLoop, cycleDelay);
