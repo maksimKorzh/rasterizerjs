@@ -8,4 +8,4 @@ https://github.com/OneLoneCoder/Javidx9/blob/master/ConsoleGameEngine/BiggerProj
 <a href="https://maksimkorzh.github.io/rasterizerjs/camera-and-clipping.html">Camera & clipping</a><br>
 
 # Video demo
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/y2E-rjHNrYU/0.jpg)](https://youtu.be/y2E-rjHNrYU)
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/9bEiR_6tovo/0.jpg)](https://www.youtube.com/watch?v=9bEiR_6tovo)
