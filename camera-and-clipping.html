@@ -1,0 +1,728 @@
+<style>html, body, canvas { margin: 0px; padding: 0px; }</style>
+<canvas id="screen" style="width: 100%; height: 100%"/>
+<script src="axis.js"></script>
+<script src="teapot.js"></script>
+<script src="starship.js"></script>
+<script src="mountains.js"></script>
+<script>
+  // Rasterizer displaying rotating cube, port of One Lone Coder's C++ 3D engine tutorials's
+
+  // init canvas
+  const canvas = document.getElementById('screen');
+  const context = canvas.getContext('2d');
+  
+  // FPS
+  const FPS = 60;
+  const cycleDelay = Math.floor(1000 / FPS);
+  var oldCycleTime = 0;
+  var cycleCount = 0;
+  var fps_rate = '...';
+  
+  // resolution  
+  const WIDTH = window.innerWidth;
+  const HEIGHT = window.innerHeight;
+  
+  // rasterizer
+  var near = 0.1;
+  var far = 1000.0;
+  var fov = 90.0;
+  var aspectRatio = HEIGHT / WIDTH;
+  var fovRad = 1.0 / Math.tan(fov * 0.5 / 180.0 * 3.14159);
+  var viewAngle = 0.0;
+  
+  // camera
+  var camera = [0.0, 0.0, 0.0];
+  var lookDirection = [0.0, 0.0, 0.0];
+  var Yaw = 0;
+  
+  // projection
+  var matrixProjected = matrixMakeProjection(90.0, HEIGHT / WIDTH, 0.1, 1000.0);
+  
+  // cube
+  var mesh = [
+    // south                 x    y    z    w
+    [[0.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 1.0], [1.0, 1.0, 0.0, 1.0]],
+    [[0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]],
+    
+    // east
+    [[1.0, 0.0, 0.0, 1.0], [1.0, 1.0, 0.0, 1.0], [1.0, 1.0, 1.0, 1.0]],
+    [[1.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0, 1.0], [1.0, 0.0, 1.0, 1.0]],
+    
+    // north
+    [[1.0, 0.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0], [0.0, 1.0, 1.0, 1.0]],
+    [[1.0, 0.0, 1.0, 1.0], [0.0, 1.0, 1.0, 1.0], [0.0, 0.0, 1.0, 1.0]],
+    
+    // west
+    [[0.0, 0.0, 1.0, 1.0], [0.0, 1.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0]],
+    [[0.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]],
+    
+    // top
+    [[0.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]],
+    [[0.0, 1.0, 0.0, 1.0], [1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 0.0, 1.0]],
+    
+    // bottom
+    [[1.0, 0.0, 1.0, 1.0], [0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0, 1.0]],
+    [[1.0, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]],
+  ];
+
+  // load model from OBJ file
+  function loadFromObj(obj) {
+    // since this is a pure front-end implementation we are
+    // using variables stored in other JS files to load models
+    // from, so feel free to add new models (assuming you're)
+    // exporting them likeOne Lone Coder did in his tutorial.
+    
+    // pick up model to load (should be stored as a variable!)
+    let model = obj;
+    
+    // split into lines
+    let lines = model.split('\n')
+    
+    // init list of vertices
+    let vertices = [];
+    
+    // init list of polygons
+    let polygons = [];
+    
+    // loop over lines
+    for (let l = 0; l < lines.length; l++) {
+      let line = lines[l].trim();
+      
+      // populate vertices
+      if (line[0] == 'v') {
+        let x = parseFloat(line.split(' ')[1]);
+        let y = parseFloat(line.split(' ')[2]);
+        let z = parseFloat(line.split(' ')[3]);
+        vertices.push([x, y, z, 1.0])
+      }
+      
+      // populate polygons
+      if (line[0] == 'f') {
+        let vectorX = parseInt(line.split(' ')[1]);
+        let vectorY = parseInt(line.split(' ')[2]);
+        let vectorZ = parseInt(line.split(' ')[3]);
+        polygons.push([vertices[vectorX-1], vertices[vectorY-1], vertices[vectorZ-1]]);
+      }
+    }
+    
+    // init mesh deepcopy
+    //console.log(polygons);
+    mesh = JSON.parse(JSON.stringify(polygons));
+  }
+  
+  // calculate model 'w'
+  function calculateW(i, m) {
+    return i[0] * m[0][3] + i[1] * m[1][3] + i[2] * m[2][3] + m[3][3];
+  }
+  
+  // create vertice
+  function createVector() {
+    return [0.0, 0.0, 0.0, 1.0];
+  }
+  
+  // create polygon
+  function createTriangle() {
+    return [[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]];
+  }
+  
+  // create 4x4 matrix instance
+  function createMatrix() {
+    return [
+      [0.0, 0.0, 0.0, 0.0],
+      [0.0, 0.0, 0.0, 0.0],
+      [0.0, 0.0, 0.0, 0.0],
+      [0.0, 0.0, 0.0, 0.0]
+    ];
+  }
+  
+  // sort triangles
+  function sortTriangles(currentCount, triangles) {
+    for (let nextCount = currentCount + 1; nextCount < triangles.length; nextCount++) {
+      let currentTriangle = triangles[currentCount][0];
+      let nextTriangle = triangles[nextCount][0];
+      let z1 = (currentTriangle[0][2] + currentTriangle[1][2] + currentTriangle[2][2]) / 3.0;
+			let z2 = (nextTriangle[0][2] + nextTriangle[1][2] + nextTriangle[2][2]) / 3.0;
+
+      if (z1 < z2) {
+        let temp = triangles[currentCount];
+        triangles[currentCount] = triangles[nextCount];
+        triangles[nextCount] = temp;
+      }
+    }
+  }
+  
+  // multiply matrix by vector
+  function matrixMultiplyVector(m, i) {
+    var v = [0.0, 0.0, 0.0, 0.0];
+    v[0] = i[0] * m[0][0] + i[1] * m[1][0] + i[2] * m[2][0] + i[3] * m[3][0];
+    v[1] = i[0] * m[0][1] + i[1] * m[1][1] + i[2] * m[2][1] + i[3] * m[3][1];
+    v[2] = i[0] * m[0][2] + i[1] * m[1][2] + i[2] * m[2][2] + i[3] * m[3][2];
+    v[3] = i[0] * m[0][3] + i[1] * m[1][3] + i[2] * m[2][3] + i[3] * m[3][3];
+    return v;
+  }
+  
+  // matrix identity
+  function matrixMakeIdentity() {
+    var matrix = createMatrix();
+    matrix[0][0] = 1.0;
+    matrix[1][1] = 1.0;
+    matrix[2][2] = 1.0;
+    matrix[3][3] = 1.0;
+    return matrix;
+  }
+  
+  // matrix rotation X
+  function matrixMakeRotationX(angleRad) {
+    var matrix = createMatrix();
+    matrix[0][0] = 1.0;
+    matrix[1][1] = Math.cos(angleRad);
+    matrix[1][2] = Math.sin(angleRad);
+    matrix[2][1] = -Math.sin(angleRad);
+    matrix[2][2] = Math.cos(angleRad);
+    matrix[3][3] = 1.0;
+    return matrix;
+  }
+  
+  // matrix rotation Y
+  function matrixMakeRotationY(angleRad) {
+    var matrix = createMatrix();    
+    matrix[0][0] = Math.cos(angleRad);
+    matrix[0][2] = Math.sin(angleRad);
+    matrix[2][0] = -Math.sin(angleRad);
+    matrix[1][1] = 1.0;
+    matrix[2][2] = Math.cos(angleRad);
+    matrix[3][3] = 1.0;
+    return matrix;
+  }
+  
+  // matrix rotation Z
+  function matrixMakeRotationZ(angleRad) {
+    var matrix = createMatrix();
+    matrix[0][0] = Math.cos(angleRad);
+    matrix[0][1] = Math.sin(angleRad);
+    matrix[1][0] = -Math.sin(angleRad);
+    matrix[1][1] = Math.cos(angleRad);
+    matrix[2][2] = 1.0;
+    matrix[3][3] = 1.0;
+    return matrix;
+  }
+
+	// matrix translation
+  function matrixMakeTranslation(x, y, z) {
+    var matrix = createMatrix();
+    matrix[0][0] = 1.0;
+    matrix[1][1] = 1.0;
+    matrix[2][2] = 1.0;
+    matrix[3][3] = 1.0;
+    matrix[3][0] = x;
+    matrix[3][1] = y;
+    matrix[3][2] = z;
+    return matrix;
+  }
+
+  // matrix projection
+  function matrixMakeProjection(fovDegrees, aspectRatio, near, far) {
+    fovRad = 1.0 / Math.tan(fovDegrees * 0.5 / 180.0 * 3.14159);
+    matrix = createMatrix();
+    matrix[0][0] = aspectRatio * fovRad;
+    matrix[1][1] = fovRad;
+    matrix[2][2] = far / (far - near);
+    matrix[3][2] = (-far * near) / (far - near);
+    matrix[2][3] = 1.0;
+    matrix[3][3] = 0.0;
+    return matrix;
+  }
+
+  // matrix multiplication
+  function multiplyMatrixVector(i, o, m) {
+    o[0] = i[0] * m[0][0] + i[1] * m[1][0] + i[2] * m[2][0] + m[3][0];
+    o[1] = i[0] * m[0][1] + i[1] * m[1][1] + i[2] * m[2][1] + m[3][1];
+    o[2] = i[0] * m[0][2] + i[1] * m[1][2] + i[2] * m[2][2] + m[3][2];
+    w = i[0] * m[0][3] + i[1] * m[1][3] + i[2] * m[2][3] + m[3][3];
+    if (w != 0.0) { o[0] /= w; o[1] /= w; o[2] /= w; }
+  }
+  
+  // Only for Rotation/Translation Matrices
+  function matrixQuickInverse(m) {
+    var matrix = createMatrix();
+    matrix[0][0] = m[0][0]; matrix[0][1] = m[1][0]; matrix[0][2] = m[2][0]; matrix[0][3] = 0.0;
+		matrix[1][0] = m[0][1]; matrix[1][1] = m[1][1]; matrix[1][2] = m[2][1]; matrix[1][3] = 0.0;
+		matrix[2][0] = m[0][2]; matrix[2][1] = m[1][2]; matrix[2][2] = m[2][2]; matrix[2][3] = 0.0;
+		matrix[3][0] = -(m[3][0] * matrix[0][0] + m[3][1] * matrix[1][0] + m[3][2] * matrix[2][0]);
+		matrix[3][1] = -(m[3][0] * matrix[0][1] + m[3][1] * matrix[1][1] + m[3][2] * matrix[2][1]);
+		matrix[3][2] = -(m[3][0] * matrix[0][2] + m[3][1] * matrix[1][2] + m[3][2] * matrix[2][2]);
+		matrix[3][3] = 1.0;
+		return matrix;
+  }
+  
+  // mulyiply vectors
+  function vectorMul(v1, k) {
+    return [ v1[0] * k, v1[1] * k, v1[2] * k, 1.0 ];
+  }
+  
+  function vectorDiv(v1, k) {
+    return [ v1[0] / k, v1[1] / k, v1[2] / k, 1.0 ];
+  }
+
+  // add vectors
+  function vectorAdd(v1, v2) {
+    return [ v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2], 1.0 ];
+  }
+
+  // subtract vectors
+  function vectorSub(v1, v2) {
+    return [ v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2], 1.0 ];
+  }
+  
+  // vector dot product
+  function vectorDotProduct(v1, v2) {
+    return v1[0]*v2[0] + v1[1]*v2[1] + v1[2] * v2[2];
+  }
+	
+  // vector length
+  function vectorLength(v) {
+    return Math.sqrt(vectorDotProduct(v, v));
+  }
+  
+  // vector cross product
+  function vectorCrossProduct(v1, v2) {
+		let v = [0.0, 0.0, 0.0];
+		v[0] = v1[1] * v2[2] - v1[2] * v2[1];
+		v[1] = v1[2] * v2[0] - v1[0] * v2[2];
+		v[2] = v1[0] * v2[1] - v1[1] * v2[0];
+		return v;
+	}
+	
+	// vector intersection with planes
+  function vectorIntersectPlane(plane_p, plane_n, lineStart, lineEnd) {
+    plane_n = vectorNormalize(plane_n);
+    let plane_d = -vectorDotProduct(plane_n, plane_p);
+    let ad = vectorDotProduct(lineStart, plane_n);
+    let bd = vectorDotProduct(lineEnd, plane_n);
+    let t = (-plane_d - ad) / (bd - ad);
+    let lineStartToEnd = vectorSub(lineEnd, lineStart);
+    let lineToIntersect = vectorMul(lineStartToEnd, t);
+    return vectorAdd(lineStart, lineToIntersect);
+  }
+  
+  // clip triangles
+  function triangleClipAgainstPlane(plane_p, plane_n, in_tri, out_tri1, out_tri2, color) {
+    // Make sure plane normal is indeed normal
+    plane_n = vectorNormalize(plane_n);
+
+    // Return signed shortest distance from point to plane, plane normal must be normalised
+    function dist(p) {
+      return (plane_n[0] * p[0] + plane_n[1] * p[1] + plane_n[2] * p[2] - vectorDotProduct(plane_n, plane_p));
+    };
+
+    // Create two temporary storage arrays to classify points either side of plane
+    // If distance sign is positive, point lies on "inside" of plane
+    let inside_points = [createVector(), createVector(), createVector()];
+    let outside_points = [createVector(), createVector(), createVector()];
+    let nInsidePointCount = 0;
+    let nOutsidePointCount = 0;
+
+    // Get signed distance of each point in triangle to plane
+    let d0 = dist(in_tri[0]);
+    let d1 = dist(in_tri[1]);
+    let d2 = dist(in_tri[2]);
+
+    if (d0 >= 0) { inside_points[nInsidePointCount++] = in_tri[0]; }
+    else { outside_points[nOutsidePointCount++] = in_tri[0]; }
+    if (d1 >= 0) { inside_points[nInsidePointCount++] = in_tri[1]; }
+    else { outside_points[nOutsidePointCount++] = in_tri[1]; }
+    if (d2 >= 0) { inside_points[nInsidePointCount++] = in_tri[2]; }
+    else { outside_points[nOutsidePointCount++] = in_tri[2]; }
+
+    // Now classify triangle points, and break the input triangle into 
+    // smaller output triangles if required. There are four possible
+    // outcomes...
+
+    if (nInsidePointCount == 0) {
+      // All points lie on the outside of plane, so clip whole triangle
+      // It ceases to exist
+      return 0; // No returned triangles are valid
+    }
+
+    if (nInsidePointCount == 3) {
+      // All points lie on the inside of plane, so do nothing
+      // and allow the triangle to simply pass through      
+      for (let i = 0; i < 3; i++)
+        for (let j = 0; j < 4; j++)
+          out_tri1[i][j] = in_tri[i][j]
+
+      return 1; // Just the one returned original triangle is valid
+    }
+
+    if (nInsidePointCount == 1 && nOutsidePointCount == 2) {//console.log('clip i1 o2');
+      // Triangle should be clipped. As two points lie outside
+      // the plane, the triangle simply becomes a smaller triangle
+
+      // The inside point is valid, so keep that...
+      out_tri1[0] = inside_points[0];
+      
+      // debug clipping with color
+      color[0] = 'rgb(0,0,100)';
+
+      // but the two new points are at the locations where the 
+      // original sides of the triangle (lines) intersect with the plane
+      out_tri1[1] = vectorIntersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
+      out_tri1[2] = vectorIntersectPlane(plane_p, plane_n, inside_points[0], outside_points[1]);
+      
+      return 1; // Return the newly formed single triangle
+    }
+
+    if (nInsidePointCount == 2 && nOutsidePointCount == 1) {//console.log('clip i2 o2');
+      // Triangle should be clipped. As two points lie inside the plane,
+      // the clipped triangle becomes a "quad". Fortunately, we can
+      // represent a quad with two new triangles
+      
+      // The first triangle consists of the two inside points and a new
+      // point determined by the location where one side of the triangle
+      // intersects with the plane      
+      out_tri1[0] = inside_points[0];
+      out_tri1[1] = inside_points[1];
+      out_tri1[2] = vectorIntersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
+
+      // The second triangle is composed of one of he inside points, a
+      // new point determined by the intersection of the other side of the 
+      // triangle and the plane, and the newly created point above
+      out_tri2[0] = inside_points[1];
+      out_tri2[1] = out_tri1[2];
+      out_tri2[2] = vectorIntersectPlane(plane_p, plane_n, inside_points[1], outside_points[0]);
+      
+      return 2; // Return two newly formed triangles which form a quad
+    }
+  }
+  
+  // multiply matrices
+  function matrixMultiplyMatrix(m1, m2) {
+    var matrix = createMatrix();
+    for (let c = 0; c < 4; c++)
+      for (let r = 0; r < 4; r++)
+        matrix[r][c] = m1[r][0] * m2[0][c] + m1[r][1] * m2[1][c] + m1[r][2] * m2[2][c] + m1[r][3] * m2[3][c];
+    return matrix;
+  }
+
+  // normalize vector
+  function vectorNormalize(v) {
+    let l = vectorLength(v);
+    return [ v[0] / l, v[1] / l, v[2] / l ];
+  }
+  
+  // matrix point at
+  function matrixPointAt(pos, target, up)
+  {
+    // Calculate new forward direction
+    let newForward = vectorSub(target, pos);
+    newForward = vectorNormalize(newForward);
+
+    // Calculate new Up direction
+    let a = vectorMul(newForward, vectorDotProduct(up, newForward));
+    let newUp = vectorSub(up, a);
+    newUp = vectorNormalize(newUp);
+
+    // New Right direction is easy, its just cross product
+    let newRight = vectorCrossProduct(newUp, newForward);
+
+    // Construct Dimensioning and Translation Matrix
+    return [
+      [newRight[0], newRight[1], newRight[2], 0.0],
+      [newUp[0], newUp[1], newUp[2], 0.0],
+      [newForward[0], newForward[1], newForward[2], 0.0],
+      [pos[0], pos[1], pos[2], 1.0]
+    ]
+  }
+
+  // render with shading
+  function fillTriangle(x1, y1, x2, y2, x3, y3, color) {
+    context.fillStyle = color;
+    context.strokeStyle = color;
+    context.beginPath();
+    context.moveTo(x1, y1);
+    context.lineTo(x2, y2);
+    context.lineTo(x3, y3);
+    context.lineTo(x1, y1);
+    context.closePath();
+    context.stroke();
+    context.fill();
+  }
+  
+  // render triangle
+  function drawTriangle(x1, y1, x2, y2, x3, y3, color) {
+    context.strokeStyle = color;
+    context.beginPath();
+    context.moveTo(x1, y1);
+    context.lineTo(x2, y2);
+    context.lineTo(x3, y3);
+    context.lineTo(x1, y1);
+    context.closePath();
+    context.stroke();
+  }
+  
+  // processes and appends triangle to a list for later sorting
+  function addTriangle(triangleProjected, triangle, color, trianglesToRaster) {
+    // project triangles from 3D to 2D
+    triangleProjected[0] = matrixMultiplyVector(matrixProjected, triangle[0]);
+    triangleProjected[1] = matrixMultiplyVector(matrixProjected, triangle[1]);
+    triangleProjected[2] = matrixMultiplyVector(matrixProjected, triangle[2]);
+    
+    // scale into view, we moved the normalising into cartesian space
+    // out of the matrix.vector function from the previous videos, so
+    // do this manually
+    triangleProjected[0] = vectorDiv(triangleProjected[0], triangleProjected[0][3]);
+    triangleProjected[1] = vectorDiv(triangleProjected[1], triangleProjected[1][3]);
+    triangleProjected[2] = vectorDiv(triangleProjected[2], triangleProjected[2][3]);
+
+    // X/Y are inverted so put them back
+    triangleProjected[0][0] *= -1.0;
+    triangleProjected[1][0] *= -1.0;
+    triangleProjected[2][0] *= -1.0;
+    triangleProjected[0][1] *= -1.0;
+    triangleProjected[1][1] *= -1.0;
+    triangleProjected[2][1] *= -1.0;
+
+    // scale into view
+    let offsetView = [1.0, 1.0, 0.0, 1.0];
+		triangleProjected[0] = vectorAdd(triangleProjected[0], offsetView);
+		triangleProjected[1] = vectorAdd(triangleProjected[1], offsetView);
+		triangleProjected[2] = vectorAdd(triangleProjected[2], offsetView);
+    triangleProjected[0][0] *= 0.5 * WIDTH;
+    triangleProjected[0][1] *= 0.5 * HEIGHT;
+    triangleProjected[1][0] *= 0.5 * WIDTH;
+    triangleProjected[1][1] *= 0.5 * HEIGHT;
+    triangleProjected[2][0] *= 0.5 * WIDTH;
+    triangleProjected[2][1] *= 0.5 * HEIGHT;
+    
+    // Store triangle for sorting
+    trianglesToRaster.push([ JSON.parse((JSON.stringify(triangleProjected))) , color]);
+  }
+  
+  // shading
+  function getColor(dp) {
+    let color = parseInt(dp*100) + 100;
+    return 'rgb(' + color + ', ' + color + ', ' + color + ')';
+  }
+  
+  // move camera
+  document.onkeydown = function(event) {
+    switch (event.keyCode) {
+      case 38: camera[1] += 0.1; break;         /* arrow up     */
+      case 40: camera[1] -= 0.1; break;         /* arrow down   */
+      case 37: camera[0] += 0.1; break;         /* arrow left   */
+      case 39: camera[0] -= 0.1; break;         /* arrow right  */
+      case 65: Yaw -= 0.1; break;               /* 'a'          */
+      case 68: Yaw += 0.1; break;               /* 'd'          */
+      case 87:
+        let forward = vectorMul(lookDirection, 0.1);  /* 'w'    */
+        camera = vectorAdd(camera, forward);
+        break;
+      case 83: { 
+        let forward = vectorMul(lookDirection, 0.1);  /* 's'    */
+        camera = vectorSub(camera, forward);
+        break;
+      }
+    }
+  }
+
+  // game loop
+  function gameLoop() {
+    // calculate FPS
+    cycleCount++;
+    if (cycleCount >= 60) cycleCount = 0;
+    var startTime = Date.now();
+    var cycleTime = startTime - oldCycleTime;
+    oldCycleTime = startTime;
+    if (cycleCount % 60 == 0) fps_rate = Math.floor(1000 / cycleTime);
+    
+    // resize canvas
+    canvas.width = WIDTH;
+    canvas.height = HEIGHT;
+    
+    // update screen
+    context.fillStyle = 'Black';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Set up rotation matrices
+		//viewAngle += 0.01;
+    //matrixRotateZ = matrixMakeRotationZ(viewAngle * 0.5);
+    //matrixRotateX = matrixMakeRotationX(viewAngle);
+
+    let matrixTranslation = createMatrix();
+		matrixTranslation = matrixMakeTranslation(0.0, 0.0, 3.0);
+
+		let matrixWorld = createMatrix();
+		matrixWorld = matrixMakeIdentity();	// Form World Matrix
+		//matrixWorld = matrixMultiplyMatrix(matrixRotateZ, matrixRotateX); // Transform by rotation
+		matrixWorld = matrixMultiplyMatrix(matrixWorld, matrixTranslation); // Transform by translation
+
+		// Create "Point At" Matrix for camera
+		let up = [0,1,0];
+		let target = [0,0,1,1];
+		let matrixCameraRotate = matrixMakeRotationY(Yaw);
+		lookDirection = matrixMultiplyVector(matrixCameraRotate, target);
+		target = vectorAdd(camera, lookDirection);
+		let matrixCamera = matrixPointAt(camera, target, up);
+		
+		// Make view matrix from camera
+		let matrixView = matrixQuickInverse(matrixCamera);
+
+		// Store triagles for rastering later
+		let trianglesToRaster = [];
+    
+    for (let i = 0; i < mesh.length; i++) {
+      let triangleMesh = mesh[i];
+      let triangleProjected = createTriangle();
+      let triangleTransformed = createTriangle();
+      let triangleViewed = createTriangle();
+
+      // world Matrix Transform
+      triangleTransformed[0] = matrixMultiplyVector(matrixWorld, triangleMesh[0]);
+      triangleTransformed[1] = matrixMultiplyVector(matrixWorld, triangleMesh[1]);
+      triangleTransformed[2] = matrixMultiplyVector(matrixWorld, triangleMesh[2]);      
+      
+      // calculate triangle Normal
+			let normal = createVector();
+			let line1 = createVector();
+			let line2 = createVector();
+			
+      // get lines either side of triangle
+      line1 = vectorSub(triangleTransformed[1], triangleTransformed[0]);
+      line2 = vectorSub(triangleTransformed[2], triangleTransformed[0]);
+      
+      // take cross product of lines to get normal to triangle surface
+      normal = vectorCrossProduct(line1, line2);
+      
+      // you normally need to normalise a normal!
+      normal = vectorNormalize(normal);
+
+      // Get Ray from triangle to camera
+			let cameraRay = vectorSub(triangleTransformed[0], camera);
+      
+      
+      // If ray is aligned with normal, then triangle is visible
+			if (vectorDotProduct(normal, cameraRay) < 0.0) {
+        
+        // illumination
+				let lightDirection = [1.0, 0.0, -1.0];
+				lightDirection = vectorNormalize(lightDirection);
+
+				// how "aligned" are light direction and triangle surface normal?
+				let dp = Math.max(0.1, vectorDotProduct(lightDirection, normal));
+
+				// choose console colors as required (much easier with RGB)
+				let color = [getColor(dp)];
+        
+        // convert world space to view space
+        triangleViewed[0] = matrixMultiplyVector(matrixView, triangleTransformed[0]);
+        triangleViewed[1] = matrixMultiplyVector(matrixView, triangleTransformed[1]);
+        triangleViewed[2] = matrixMultiplyVector(matrixView, triangleTransformed[2]);
+
+        // clip Viewed Triangle against near plane, this could form two additional
+        // additional triangles. 
+        let clippedTriangles = 0;
+        let clipped = [createTriangle(), createTriangle()];        
+        clippedTriangles = triangleClipAgainstPlane([0.0, 0.0, 0.1, 1.0], [0.0, 0.0, 1.0, 1.0], triangleViewed, clipped[0], clipped[1], color);
+
+        // we may end up with multiple triangles form the clip, so project as required
+        
+        // returns a quad
+        if (clippedTriangles==2) {
+          addTriangle(triangleProjected, clipped[0], ['rgb(0,100,0)'], trianglesToRaster);
+          addTriangle(triangleProjected, clipped[1], ['rgb(100,0,0)'], trianglesToRaster);
+        }
+        
+        // returns unchanged or a smaller triangle
+        else if (clippedTriangles == 1) addTriangle(triangleProjected, clipped[0], color, trianglesToRaster);
+      }
+    }
+
+		// eventual triangles to render
+		let listTriangles = [];
+		
+		// Loop through all transformed, viewed, projected, and sorted triangles
+		for (let i = 0; i < trianglesToRaster.length; i++) {
+		  // Sort triangles from back to front
+		  sortTriangles(i, trianglesToRaster)
+		  
+      // Clip triangles against all four screen edges, this could yield
+      // a bunch of triangles, so create a queue that we traverse to 
+      //  ensure we only test new triangles generated against planes
+      let triToRaster = trianglesToRaster[i];
+      let clipped = [createTriangle(), createTriangle()];
+      
+      //listTriangles.push(triToRaster);
+      //let newTriangles = 1;
+      
+      for (let p = 0; p < 4; p++) {
+        let test = triToRaster[0];
+        let color = triToRaster[1]
+        let nTrisToAdd = 0;
+
+        // Clip it against a plane. We only need to test each 
+        // subsequent plane, against subsequent new triangles
+        // as all triangles after a plane clip are guaranteed
+        // to lie on the inside of the plane. I like how this
+        // comment is almost completely and utterly justified
+        switch (p) {
+          case 0:	nTrisToAdd = triangleClipAgainstPlane([0.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 1.0], test, clipped[0], clipped[1], color); break;
+          case 1:	nTrisToAdd = triangleClipAgainstPlane([0.0, HEIGHT - 1, 0.0, 1.0], [0.0, -1.0, 0.0, 1.0], test, clipped[0], clipped[1], color); break;
+          case 2:	nTrisToAdd = triangleClipAgainstPlane([0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], test, clipped[0], clipped[1], color); break;
+          case 3:	nTrisToAdd = triangleClipAgainstPlane([WIDTH - 1, 0.0, 0.0, 1.0], [-1.0, 0.0, 0.0, 1.0], test, clipped[0], clipped[1], color); break;
+        }
+
+        // Clipping may yield a variable number of triangles, so
+        // add these new ones to the back of the queue for subsequent
+        // clipping against next planes
+
+        // returns a quad
+        if (nTrisToAdd==2) {
+          listTriangles.push(JSON.parse(JSON.stringify([clipped[0], ['rgb(0,100,0)']])));
+          listTriangles.push(JSON.parse(JSON.stringify([clipped[1], ['rgb(100,0,0)']])));
+          //addTriangle(triangleProjected, clipped[0], ['rgb(0,100,0)'], trianglesToRaster);
+          //addTriangle(triangleProjected, clipped[1], ['rgb(100,0,0)'], trianglesToRaster);
+        }
+        
+        // returns unchanged or a smaller triangle
+        else if (nTrisToAdd == 1) listTriangles.push(JSON.parse(JSON.stringify([clipped[0], color])));//addTriangle(triangleProjected, clipped[0], color, trianglesToRaster);
+      } 
+    }
+
+	  // Draw the transformed, viewed, clipped, projected, sorted, clipped triangles
+    for (let i = 0; i < listTriangles.length; i++) {
+      let polygon = listTriangles[i][0];
+	    let color = listTriangles[i][1][0];
+	    //let order = 'rgb(' + (100 + i*10) + ', ' + (100 + i*10) + ', ' + (100 + i*10) + ')'
+
+	    // shading
+      fillTriangle(polygon[0][0], polygon[0][1],
+        polygon[1][0], polygon[1][1],
+        polygon[2][0], polygon[2][1],
+        color);
+      
+      // triangles
+      drawTriangle(polygon[0][0], polygon[0][1],
+        polygon[1][0], polygon[1][1],
+        polygon[2][0], polygon[2][1],
+        'Black');
+    }
+  
+  
+    // infinite loop
+    setTimeout(gameLoop, cycleDelay);
+    
+    // render FPS to screen
+    context.fillStyle = 'white';
+    context.font = '10px Monospace';
+    context.fillText('FPS: ' + fps_rate, 0, 20);
+    
+  } window.onload = function() {
+    // load 3D model (Cube mesh is default if commented out)
+    //loadFromObj(starship);
+    loadFromObj(axis);
+    //loadFromObj(teapot);
+    //loadFromObj(mountains);
+    gameLoop();
+  }
+  
+</script>
