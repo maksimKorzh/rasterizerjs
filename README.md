@@ -4,3 +4,8 @@ https://github.com/OneLoneCoder/Javidx9/blob/master/ConsoleGameEngine/BiggerProj
 
 # Try it online
 <a href="https://maksimkorzh.github.io/rasterizerjs/rotating-cube.html">Rotating cube</a>
+<a href="https://maksimkorzh.github.io/rasterizerjs/shading.html">Shading</a>
+<a href="https://maksimkorzh.github.io/rasterizerjs/camera-and-clipping.html">Camera & clipping</a>
+
+# Video demo
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/y2E-rjHNrYU/0.jpg)](https://youtu.be/y2E-rjHNrYU)
