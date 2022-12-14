@@ -544,6 +544,11 @@
     context.fillStyle = 'Black';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Set up rotation matrices
+		//viewAngle += 0.01;
+    //matrixRotateZ = matrixMakeRotationZ(viewAngle * 0.5);
+    //matrixRotateX = matrixMakeRotationX(viewAngle);
+
     let matrixTranslation = createMatrix();
 		matrixTranslation = matrixMakeTranslation(0.0, 0.0, 3.0);
 
