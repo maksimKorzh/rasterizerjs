@@ -543,11 +543,6 @@
     // update screen
     context.fillStyle = 'Black';
     context.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Set up rotation matrices
-		//viewAngle += 0.01;
-    //matrixRotateZ = matrixMakeRotationZ(viewAngle * 0.5);
-    //matrixRotateX = matrixMakeRotationX(viewAngle);
 
     let matrixTranslation = createMatrix();
 		matrixTranslation = matrixMakeTranslation(0.0, 0.0, 3.0);
@@ -680,8 +675,6 @@
         if (nTrisToAdd==2) {
           listTriangles.push(JSON.parse(JSON.stringify([clipped[0], ['rgb(0,100,0)']])));
           listTriangles.push(JSON.parse(JSON.stringify([clipped[1], ['rgb(100,0,0)']])));
-          //addTriangle(triangleProjected, clipped[0], ['rgb(0,100,0)'], trianglesToRaster);
-          //addTriangle(triangleProjected, clipped[1], ['rgb(100,0,0)'], trianglesToRaster);
         }
         
         // returns unchanged or a smaller triangle
