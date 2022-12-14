@@ -710,7 +710,7 @@
   
   
     // infinite loop
-    setTimeout(gameLoop, cycleDelay);
+    requestAnimationFrame(gameLoop);
     
     // render FPS to screen
     context.fillStyle = 'white';
@@ -720,9 +720,9 @@
   } window.onload = function() {
     // load 3D model (Cube mesh is default if commented out)
     //loadFromObj(starship);
-    loadFromObj(axis);
+    //loadFromObj(axis);
     //loadFromObj(teapot);
-    //loadFromObj(mountains);
+    loadFromObj(mountains);
     gameLoop();
   }
   
